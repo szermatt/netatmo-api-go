@@ -26,12 +26,15 @@ type Config struct {
 	ClientID string
 	// ClientSecret Client app secret
 	ClientSecret string
+	// If non-nil, wraps the TokenSource to give to the HTTP client.
+	TokenSource func(oauth2.TokenSource) oauth2.TokenSource
 }
 
 // Client use to make request to Netatmo API
 type Client struct {
-	oauth      *oauth2.Config
-	httpClient *http.Client
+	oauth       *oauth2.Config
+	httpClient  *http.Client
+	tokenSource func(oauth2.TokenSource) oauth2.TokenSource
 }
 
 // NewClient creates an unauthenticated NetAtmo API client.
@@ -47,7 +50,8 @@ func NewClient(config Config) *Client {
 	}
 
 	return &Client{
-		oauth: oauth,
+		oauth:       oauth,
+		tokenSource: config.TokenSource,
 	}
 }
 
@@ -63,8 +67,7 @@ func (c *Client) Exchange(ctx context.Context, code, state string) error {
 	if err != nil {
 		return err
 	}
-
-	c.httpClient = c.oauth.Client(ctx, token)
+	c.InitWithToken(ctx, token)
 	return nil
 }
 
@@ -81,5 +84,9 @@ func (c *Client) CurrentToken() (*oauth2.Token, error) {
 
 // InitWithToken initializes the client with an existing token.
 func (c *Client) InitWithToken(ctx context.Context, token *oauth2.Token) {
-	c.httpClient = c.oauth.Client(ctx, token)
+	source := c.oauth.TokenSource(ctx, token)
+	if c.tokenSource != nil {
+		source = c.tokenSource(source)
+	}
+	c.httpClient = oauth2.NewClient(ctx, source)
 }
